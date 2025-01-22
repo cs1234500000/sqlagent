@@ -23,9 +23,11 @@ class QueryExecutor:
             List[Dict[str, Any]]: Query results
         """
         try:
-            with self.engine.connect() as connection:
+            # Create a new connection for each query
+            with sa.create_engine(self.engine.url).connect() as connection:
                 result = connection.execute(sa.text(query))
-                return [dict(row) for row in result]
+                # Convert each row to a dictionary using _asdict()
+                return [row._asdict() for row in result]
                 
         except SQLAlchemyError as e:
             raise Exception(f"Error executing query: {str(e)}") 

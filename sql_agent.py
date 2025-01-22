@@ -13,7 +13,7 @@ class SQLAgent:
             model (str): The OpenAI model to use
         """
         load_dotenv()
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.db_schema = db_schema
         self.model = model
         self.context_history: List[Dict] = []
@@ -22,10 +22,17 @@ class SQLAgent:
         """
         Construct the prompt for the OpenAI API.
         """
-        base_prompt = f"""Given the following database schema:
+        base_prompt = f"""Given the following PostgreSQL database schema:
         {self.db_schema}
         
-        Generate a SQL query for the following question: {question}"""
+        Generate a PostgreSQL query for the following question: {question}
+        
+        Important notes:
+        - Use PostgreSQL-specific date/time functions (e.g., date_trunc, extract)
+        - Use INTERVAL syntax like: CURRENT_DATE - INTERVAL '1 month'
+        - Always use single quotes for string and interval literals
+        - For month comparison, use EXTRACT(MONTH FROM timestamp_column)
+        """
         
         if context:
             base_prompt += f"\nAdditional context: {context}"
@@ -46,10 +53,10 @@ class SQLAgent:
         prompt = self._construct_prompt(question, context)
         
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a SQL expert. Generate only SQL queries without any explanations."},
+                    {"role": "system", "content": "You are a PostgreSQL expert. Generate only PostgreSQL-compatible SQL queries without any explanations. Use appropriate PostgreSQL date/time functions and syntax."},
                     {"role": "user", "content": prompt}
                 ]
             )
