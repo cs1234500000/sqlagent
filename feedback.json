@@ -7,5 +7,14 @@
     "feedback_type": "success",
     "feedback_text": "Query executed successfully",
     "user_id": null
+  },
+  {
+    "timestamp": "2025-01-23T00:33:57.238605",
+    "query": "SELECT c.id, c.name, c.email \nFROM customers c \nJOIN orders o ON c.id = o.customer_id \nWHERE o.amount > 1000 \n  AND o.order_date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') \n  AND o.order_date < date_trunc('month', CURRENT_DATE) \nGROUP BY c.id, c.name, c.email;",
+    "question": null,
+    "execution_time": 1.8248891830444336,
+    "feedback_type": "success",
+    "feedback_text": "Query executed successfully",
+    "user_id": null
   }
 ]
