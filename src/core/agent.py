@@ -59,25 +59,29 @@ class SQLAgent:
         start_time = time.time()
         prompt = self._construct_prompt(request.question, request.context)
         
-        # Define the function schema for structured output
+        # Define the function schema based on whether explanation is requested
+        function_params = {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The PostgreSQL query that answers the question"
+                }
+            },
+            "required": ["query"]
+        }
+        
+        if request.include_explanation:
+            function_params["properties"]["explanation"] = {
+                "type": "string",
+                "description": "Optional explanation of how the query works"
+            }
+
         functions = [
             {
                 "name": "generate_sql_query",
                 "description": "Generate a PostgreSQL query based on the natural language question",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The PostgreSQL query that answers the question"
-                        },
-                        "explanation": {
-                            "type": "string",
-                            "description": "Optional explanation of how the query works"
-                        }
-                    },
-                    "required": ["query"]
-                }
+                "parameters": function_params
             }
         ]
 
@@ -102,18 +106,21 @@ class SQLAgent:
             # Execute the query
             results = await self.executor.execute(query_output.query)
             
-            self.context_history.append({
+            # Only include explanation in history if requested
+            history_entry = {
                 "question": request.question,
                 "context": request.context,
-                "generated_query": query_output.query,
-                "explanation": query_output.explanation
-            })
+                "generated_query": query_output.query
+            }
+            if request.include_explanation:
+                history_entry["explanation"] = query_output.explanation
+            self.context_history.append(history_entry)
             
             return QueryResult(
                 query=query_output.query,
                 results=results,
                 execution_time=time.time() - start_time,
-                explanation=query_output.explanation
+                explanation=query_output.explanation if request.include_explanation else None
             )
             
         except Exception as e:

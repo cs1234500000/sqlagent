@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
 class Config(BaseSettings):
     openai_api_key: str
@@ -8,7 +9,7 @@ class Config(BaseSettings):
     query_timeout: float = 30.0
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(Path(__file__).parent.parent.parent / ".env"),
         protected_namespaces=('settings_',),
         env_prefix="",
         case_sensitive=False
@@ -17,4 +18,4 @@ class Config(BaseSettings):
     @property
     def connection_string(self) -> str:
         """Alias for db_connection_string for backward compatibility"""
-        return self.db_connection_string 
+        return self.db_connection_string

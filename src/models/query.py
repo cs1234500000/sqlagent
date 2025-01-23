@@ -24,6 +24,7 @@ class QueryRequest(BaseModel):
     parameters: Optional[List[QueryParameter]] = Field(default_factory=list, description="Query parameters")
     max_results: Optional[int] = Field(None, description="Maximum number of results to return")
     timeout: Optional[float] = Field(30.0, description="Query timeout in seconds")
+    include_explanation: bool = False  # Add this field to control explanation
 
     @validator('question')
     def validate_question(cls, v):
