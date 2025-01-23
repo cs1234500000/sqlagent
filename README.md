@@ -4,9 +4,12 @@ An intelligent agent that translates natural language to SQL queries, making dat
 
 ## Why SQL AI Agent?
 
-- **Simplify Database Queries**: Users can interact with databases using natural language without SQL knowledge
-- **Increase Productivity**: Significantly reduces the time spent writing and debugging SQL queries
-- **Expand Access**: Democratizes data access by enabling non-technical users to query databases effectively
+- Natural language to SQL conversion using OpenAI GPT
+- PostgreSQL query validation and execution
+- Schema introspection and management
+- Query timeout and error handling
+- Result formatting (table, JSON, CSV)
+- Async support
 
 ## Prerequisites
 
