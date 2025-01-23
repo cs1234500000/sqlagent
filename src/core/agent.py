@@ -7,6 +7,10 @@ from ..core.validator import QueryValidator
 from ..core.executor import QueryExecutor, ExecutionError
 from ..utils.config import Config
 from pydantic import BaseModel
+from ..ai.prompt_builder import PromptBuilder
+from ..ai.context import ContextManager
+from ..ai.feedback import FeedbackCollector
+from ..ai.templates import QueryTemplates, TemplateType
 
 class SQLQueryOutput(BaseModel):
     query: str
@@ -25,32 +29,46 @@ class SQLAgent:
         self.validator = QueryValidator()
         self.executor = QueryExecutor(config.db_connection_string)
         self.client = openai.OpenAI(api_key=config.openai_api_key)
-        self.context_history: List[Dict] = []
         self.db_schema = db_schema
+        
+        # Initialize AI components
+        self.prompt_builder = PromptBuilder()
+        self.context_manager = ContextManager()
+        self.feedback_collector = FeedbackCollector()
+        self.templates = QueryTemplates()
 
     def _construct_prompt(self, question: str, context: Optional[str] = None) -> str:
         """
-        Construct the prompt for the OpenAI API.
+        Construct the prompt for the OpenAI API using PromptBuilder.
         """
         if not self.db_schema:
             raise ValueError("Database schema is required but not provided")
             
-        base_prompt = f"""Given the following PostgreSQL database schema:
-        {self.db_schema}
+        # Analyze user intent
+        intent = self.context_manager.analyze_user_intent(question)
         
-        Generate a PostgreSQL query for the following question: {question}
+        # Build context
+        context_data = self.context_manager.build_context(
+            question, 
+            self.context_manager.conversation_history
+        )
         
-        Important notes:
-        - Use PostgreSQL-specific date/time functions (e.g., date_trunc, extract)
-        - Use INTERVAL syntax like: CURRENT_DATE - INTERVAL '1 month'
-        - Always use single quotes for string and interval literals
-        - For month comparison, use EXTRACT(MONTH FROM timestamp_column)
-        """
+        # Get relevant examples
+        examples = self.feedback_collector.get_learning_examples()
         
-        if context:
-            base_prompt += f"\nAdditional context: {context}"
+        # Build and optimize prompt
+        prompt = self.prompt_builder.build_prompt(
+            question=question,
+            schema=self.db_schema,
+            context=context_data if context else None
+        )
+        
+        # Add examples if available
+        if examples:
+            prompt = self.prompt_builder.add_examples(prompt, examples)
             
-        return base_prompt
+        # Optimize tokens
+        return self.prompt_builder.optimize_tokens(prompt, self.config.max_tokens)
 
     async def generate_query(self, request: QueryRequest) -> QueryResult:
         """
@@ -106,24 +124,39 @@ class SQLAgent:
             # Execute the query
             results = await self.executor.execute(query_output.query)
             
-            # Only include explanation in history if requested
-            history_entry = {
-                "question": request.question,
-                "context": request.context,
-                "generated_query": query_output.query
-            }
-            if request.include_explanation:
-                history_entry["explanation"] = query_output.explanation
-            self.context_history.append(history_entry)
-            
-            return QueryResult(
+            # Create query result
+            result = QueryResult(
                 query=query_output.query,
                 results=results,
                 execution_time=time.time() - start_time,
                 explanation=query_output.explanation if request.include_explanation else None
             )
             
+            # Update conversation history
+            self.context_manager.maintain_conversation(request, result)
+            
+            # Add successful query to feedback
+            self.feedback_collector.add_feedback(
+                query_result=result,
+                feedback_type="success",
+                feedback_text="Query executed successfully"
+            )
+            
+            return result
+            
         except Exception as e:
+            # Record failed query in feedback
+            error_result = QueryResult(
+                query=str(e),
+                results=[],
+                execution_time=time.time() - start_time,
+                error=str(e)
+            )
+            self.feedback_collector.add_feedback(
+                query_result=error_result,
+                feedback_type="failure",
+                feedback_text=str(e)
+            )
             raise Exception(f"Error generating SQL query: {str(e)}")
 
     async def process_request(self, request: QueryRequest) -> QueryResult:
