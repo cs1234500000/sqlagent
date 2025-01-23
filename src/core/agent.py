@@ -1,5 +1,6 @@
 import openai
 import time
+import asyncio
 from typing import List, Dict, Any, Optional
 from ..models.schema import DatabaseSchema
 from ..models.query import QueryRequest, QueryResult
@@ -11,6 +12,8 @@ from ..ai.prompt_builder import PromptBuilder
 from ..ai.context import ContextManager
 from ..ai.feedback import FeedbackCollector
 from ..ai.templates import QueryTemplates, TemplateType
+from ..database.schema_generator import SchemaGenerator
+from ..database.data_importer import DataImporter
 
 class SQLQueryOutput(BaseModel):
     query: str
@@ -29,20 +32,26 @@ class SQLAgent:
         self.validator = QueryValidator()
         self.executor = QueryExecutor(config.db_connection_string)
         self.client = openai.OpenAI(api_key=config.openai_api_key)
-        self.db_schema = db_schema
+        self.db_schema = db_schema  # User provided schema
+        self.context = None
+        self.templates = QueryTemplates()
         
         # Initialize AI components
         self.prompt_builder = PromptBuilder()
         self.context_manager = ContextManager()
         self.feedback_collector = FeedbackCollector()
-        self.templates = QueryTemplates()
+        self.schema_generator = SchemaGenerator(config)
 
     def _construct_prompt(self, question: str, context: Optional[str] = None) -> str:
         """
         Construct the prompt for the OpenAI API using PromptBuilder.
         """
-        if not self.db_schema:
-            raise ValueError("Database schema is required but not provided")
+        # Check if we have either user-provided schema or generated schema
+        if not self.db_schema and not self.context:
+            raise ValueError("Database schema is required. Either provide it during initialization or generate it using create_schema_from_csv")
+            
+        # Use either the user-provided schema or the generated context
+        schema_context = self.db_schema if self.db_schema else self.context
             
         # Analyze user intent
         intent = self.context_manager.analyze_user_intent(question)
@@ -59,7 +68,7 @@ class SQLAgent:
         # Build and optimize prompt
         prompt = self.prompt_builder.build_prompt(
             question=question,
-            schema=self.db_schema,
+            schema=schema_context,
             context=context_data if context else None
         )
         
@@ -188,4 +197,105 @@ class SQLAgent:
             )
             
         except ExecutionError as e:
-            raise Exception(f"Query execution failed: {str(e)}") 
+            raise Exception(f"Query execution failed: {str(e)}")
+
+    async def create_schema_from_csv(self, 
+                                   csv_path: str, 
+                                   description: Optional[str] = None) -> DatabaseSchema:
+        """
+        Create database schema from CSV file using LLM.
+        
+        Args:
+            csv_path: Path to CSV file
+            description: Optional natural language description
+            
+        Returns:
+            DatabaseSchema: Generated schema
+        """
+        return await self.schema_generator.generate_schema(csv_path, description)
+
+    async def get_schema_from_database(self) -> DatabaseSchema:
+        """
+        Get existing schema from database.
+        
+        Returns:
+            DatabaseSchema: Current database schema
+        """
+        return await self.executor.get_schema()
+
+    async def apply_schema(self, schema: DatabaseSchema):
+        """
+        Apply database schema and store it for context.
+        For LLM-generated schemas, also stores the schema description as context.
+        """
+        try:
+            # Generate and execute SQL
+            sql = schema.to_sql()
+            await self.executor.execute(sql)
+            
+            # Store schema description as context if it's LLM-generated
+            if any(table.description for table in schema.tables):
+                self.context = self._generate_schema_description(schema)
+                
+            # Give the database a moment to complete the transaction
+            await asyncio.sleep(0.5)
+                
+            # Verify tables were created
+            verify_sql = """
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public';
+            """
+            tables = await self.executor.execute(verify_sql)
+            expected_tables = {table.name.lower() for table in schema.tables}
+            actual_tables = {row['table_name'] for row in tables}
+            
+            missing_tables = expected_tables - actual_tables
+            if missing_tables:
+                raise Exception(f"Failed to create tables: {', '.join(missing_tables)}")
+                
+        except Exception as e:
+            raise Exception(f"Failed to apply schema: {str(e)}")
+
+    def _generate_schema_description(self, schema: DatabaseSchema) -> str:
+        """Generate a text description of the schema for context."""
+        descriptions = []
+        
+        for table in schema.tables:
+            table_desc = [f"Table {table.name}:"]
+            if table.description:
+                table_desc.append(f"Description: {table.description}")
+            
+            # Add columns
+            table_desc.append("Columns:")
+            for col in table.columns:
+                col_desc = f"- {col.name} ({col.type})"
+                if col.is_primary:
+                    col_desc += " PRIMARY KEY"
+                if not col.is_nullable:
+                    col_desc += " NOT NULL"
+                if col.description:
+                    col_desc += f" -- {col.description}"
+                table_desc.append(col_desc)
+            
+            # Add foreign keys
+            if table.foreign_keys:
+                table_desc.append("Foreign Keys:")
+                for fk in table.foreign_keys:
+                    table_desc.append(
+                        f"- {fk.column} -> {fk.referenced_table}({fk.referenced_column})"
+                    )
+            
+            descriptions.append("\n".join(table_desc))
+        
+        return "\n\n".join(descriptions) 
+
+    async def import_csv_data(self, schema: DatabaseSchema, csv_path: str) -> None:
+        """Import CSV data into database according to schema."""
+        importer = DataImporter(self.config)
+        statements = await importer.generate_import_statements(schema, csv_path)
+        
+        print(f"\nExecuting {len(statements)} INSERT statements...")
+        for sql in statements:
+            result = await self.executor.execute(sql)
+            print(f"Result: {result}") 

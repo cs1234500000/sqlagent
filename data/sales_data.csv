@@ -1,0 +1,16 @@
+transaction_id,date,customer_name,customer_email,product_name,product_category,quantity,unit_price,total_amount,payment_method,shipping_address,shipping_city,shipping_country,order_status
+1001,2024-01-15,John Smith,john.smith@email.com,Gaming Laptop,Electronics,1,1299.99,1299.99,Credit Card,123 Main St,New York,USA,Delivered
+1002,2024-01-15,Sarah Johnson,sarah.j@email.com,Wireless Headphones,Electronics,2,199.99,399.98,PayPal,456 Oak Ave,Los Angeles,USA,Processing
+1003,2024-01-16,Mike Brown,mike.b@email.com,Smart Watch,Electronics,1,299.99,299.99,Debit Card,789 Pine Rd,Chicago,USA,Shipped
+1004,2024-01-16,Emma Wilson,emma.w@email.com,Gaming Mouse,Electronics,1,79.99,79.99,Credit Card,321 Elm St,Boston,USA,Delivered
+1005,2024-01-17,David Lee,david.l@email.com,Mechanical Keyboard,Electronics,1,149.99,149.99,PayPal,654 Maple Dr,Seattle,USA,Processing
+1006,2024-01-17,Lisa Chen,lisa.c@email.com,Gaming Monitor,Electronics,1,499.99,499.99,Credit Card,987 Cedar Ln,San Francisco,USA,Pending
+1007,2024-01-18,James Wilson,james.w@email.com,Gaming Chair,Furniture,1,299.99,299.99,Debit Card,147 Birch St,Miami,USA,Delivered
+1008,2024-01-18,Maria Garcia,maria.g@email.com,Gaming Desk,Furniture,1,399.99,399.99,Credit Card,258 Walnut Ave,Houston,USA,Shipped
+1009,2024-01-19,Robert Taylor,robert.t@email.com,Gaming Laptop,Electronics,1,1499.99,1499.99,PayPal,369 Pine St,Denver,USA,Processing
+1010,2024-01-19,Anna Kim,anna.k@email.com,Wireless Mouse,Electronics,2,49.99,99.98,Credit Card,741 Oak Rd,Portland,USA,Delivered
+1011,2024-01-20,Thomas Anderson,thomas.a@email.com,Gaming Headset,Electronics,1,129.99,129.99,Debit Card,852 Maple St,Austin,USA,Pending
+1012,2024-01-20,Sophie Martin,sophie.m@email.com,Gaming Console,Electronics,1,499.99,499.99,PayPal,963 Cedar Ave,Phoenix,USA,Processing
+1013,2024-01-21,Chris Johnson,chris.j@email.com,Gaming Bundle,Electronics,1,799.99,799.99,Credit Card,159 Elm Dr,Dallas,USA,Shipped
+1014,2024-01-21,Rachel Green,rachel.g@email.com,Gaming Monitor,Electronics,2,499.99,999.98,Credit Card,357 Pine Ln,San Diego,USA,Delivered
+1015,2024-01-22,Daniel Park,daniel.p@email.com,Gaming Keyboard,Electronics,1,199.99,199.99,PayPal,486 Oak St,Atlanta,USA,Processing 

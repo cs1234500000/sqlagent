@@ -1,18 +1,18 @@
 [
   {
-    "timestamp": "2025-01-23T00:30:48.106685",
-    "query": "SELECT c.id, c.name, c.email \nFROM customers c \nJOIN orders o ON c.id = o.customer_id \nWHERE o.amount > 1000 \n  AND o.order_date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') \n  AND o.order_date < date_trunc('month', CURRENT_DATE) \nGROUP BY c.id, c.name, c.email;",
+    "timestamp": "2025-01-23T17:55:57.281813",
+    "query": "SELECT title, published_year FROM books WHERE published_year > 1930;",
     "question": null,
-    "execution_time": 2.2188808917999268,
+    "execution_time": 1.4396018981933594,
     "feedback_type": "success",
     "feedback_text": "Query executed successfully",
     "user_id": null
   },
   {
-    "timestamp": "2025-01-23T00:33:57.238605",
-    "query": "SELECT c.id, c.name, c.email \nFROM customers c \nJOIN orders o ON c.id = o.customer_id \nWHERE o.amount > 1000 \n  AND o.order_date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') \n  AND o.order_date < date_trunc('month', CURRENT_DATE) \nGROUP BY c.id, c.name, c.email;",
+    "timestamp": "2025-01-23T17:59:45.769827",
+    "query": "SELECT title, published_year FROM books WHERE published_year > 1930;",
     "question": null,
-    "execution_time": 1.8248891830444336,
+    "execution_time": 1.684248924255371,
     "feedback_type": "success",
     "feedback_text": "Query executed successfully",
     "user_id": null
