@@ -6,12 +6,30 @@ sys.path.append(str(project_root))
 from src.core.agent import SQLAgent
 from src.utils.config import Config
 
+async def cleanup_database(agent):
+    """Delete all rows from tables while preserving schema."""
+    print("\nCleaning up database...")
+    
+    # Delete rows in correct order (children first, then parents)
+    cleanup_sql = """
+    TRUNCATE TABLE transactions CASCADE;
+    TRUNCATE TABLE shipping_address CASCADE;
+    TRUNCATE TABLE shipping_information CASCADE;
+    TRUNCATE TABLE products CASCADE;
+    TRUNCATE TABLE customers CASCADE;
+    """
+    await agent.executor.execute(cleanup_sql)
+    print("All rows deleted.")
+
 async def main():
     try:
         print("\n=== Starting Data Import ===")
         
         config = Config()
         agent = SQLAgent(config)
+        
+        # First clean up the database
+        await cleanup_database(agent)
         
         # Get existing schema
         print("\n1. Getting database schema...")

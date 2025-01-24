@@ -296,6 +296,7 @@ class SQLAgent:
         statements = await importer.generate_import_statements(schema, csv_path)
         
         print(f"\nExecuting {len(statements)} INSERT statements...")
+        
+        # Execute statements in order
         for sql in statements:
-            result = await self.executor.execute(sql)
-            print(f"Result: {result}") 
+            await self.executor.execute(sql) 

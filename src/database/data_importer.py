@@ -12,13 +12,25 @@ class DataImporter:
         """Initialize the Data Importer."""
         self.client = openai.OpenAI(api_key=config.openai_api_key)
         self.templates = DataImportTemplates()
+        self.id_mappings = {}  # Store returned IDs from parent tables
+        self.fk_mappings = {}  # Store foreign key relationships
 
     def _build_dependency_graph(self, schema: DatabaseSchema) -> Dict[str, Set[str]]:
         """Build a graph of table dependencies based on foreign keys."""
         dependencies = defaultdict(set)
         for table in schema.tables:
+            # Make sure table is in graph even if it has no dependencies
+            if table.name not in dependencies:
+                dependencies[table.name] = set()
+            # Add dependencies from foreign keys
             for fk in table.foreign_keys:
+                # Table with foreign key depends on referenced table
                 dependencies[table.name].add(fk.referenced_table)
+                # Make sure referenced table is in graph
+                if fk.referenced_table not in dependencies:
+                    dependencies[fk.referenced_table] = set()
+
+        print(f"Dependency graph: {dict(dependencies)}")
         return dependencies
 
     def _get_insertion_order(self, dependencies: Dict[str, Set[str]]) -> List[str]:
@@ -33,96 +45,94 @@ class DataImporter:
             if table in visited:
                 return
             temp_visited.add(table)
-            for dep in dependencies.get(table, []):
+            # First visit all dependencies (referenced tables)
+            for dep in dependencies[table]:
                 visit(dep)
             temp_visited.remove(table)
             visited.add(table)
+            # Add table after its dependencies
             order.append(table)
 
-        # Visit all tables
-        tables = set(dependencies.keys()) | {t for deps in dependencies.values() for t in deps}
-        for table in tables:
+        # Start with tables that have foreign keys
+        tables_with_fk = [t for t, deps in dependencies.items() if deps]
+        for table in tables_with_fk:
             if table not in visited:
                 visit(table)
 
+        # Then add any remaining tables
+        for table in dependencies:
+            if table not in visited:
+                visit(table)
+
+        print(f"Table insertion order: {order}")
         return order
 
     async def generate_import_statements(self, schema: DatabaseSchema, csv_path: str) -> List[str]:
         """Generate SQL INSERT statements to import CSV data according to schema."""
-        # Read CSV data
         df = pd.read_csv(csv_path)
+        print(f"CSV columns: {df.columns.tolist()}")
         
-        # Build dependency graph and get insertion order
         dependencies = self._build_dependency_graph(schema)
         table_order = self._get_insertion_order(dependencies)
         
-        insert_statements = []
-        id_mappings = {}  # Store generated IDs: {table_name: {lookup_value: id}}
+        # Get sequence names for each table
+        sequence_names = {}  # table -> sequence_name
+        for table in schema.tables:
+            pk_col = next((col for col in table.columns if col.is_primary), None)
+            if pk_col and 'nextval' in str(pk_col.default):
+                # Extract sequence name from: nextval('sequence_name'::regclass)
+                seq_name = str(pk_col.default).split("'")[1].split("'")[0]
+                sequence_names[table.name] = seq_name
+                print(f"Found sequence {seq_name} for table {table.name}")
 
+        statements = []
+        
         for table_name in table_order:
+            print(f"\nProcessing table: {table_name}")
             table = schema.get_table(table_name)
             if not table:
                 continue
 
-            # Get non-SERIAL columns
-            data_columns = [col for col in table.columns 
-                          if not col.type.upper().startswith('SERIAL')]
-            
-            # Map CSV columns to database columns
+            # Map all non-auto-generated columns
             csv_to_db = {}
-            for col in data_columns:
-                # Try different variations of column names
-                possible_names = [
-                    col.name,
-                    f"{table_name}_{col.name}",
-                    col.name.replace('_', '')
-                ]
-                for name in possible_names:
-                    if name in df.columns:
-                        csv_to_db[name] = col.name
-                        break
+            for col in table.columns:
+                if not (col.is_primary and 'nextval' in str(col.default)):
+                    csv_to_db[col.name] = col.name
+
+            print(f"CSV to DB mapping for {table_name}: {csv_to_db}")
 
             if csv_to_db:
-                # Get unique rows for this table
-                table_data = df[list(csv_to_db.keys())].drop_duplicates()
+                # Get all required columns from CSV
+                available_cols = [col for col in csv_to_db.keys() if col in df.columns]
+                table_data = df[available_cols].drop_duplicates()
                 
-                # Generate INSERT statements
                 for _, row in table_data.iterrows():
+                    # First get the next ID if this table has a sequence
+                    if table_name in sequence_names:
+                        statements.append(f"SELECT nextval('{sequence_names[table_name]}');")
+
                     columns = []
                     values = []
-                    
-                    for csv_col, db_col in csv_to_db.items():
-                        # Check if this is a foreign key
-                        fk = next((fk for fk in table.foreign_keys if fk.column == db_col), None)
-                        if fk:
-                            # Get the lookup value from CSV
-                            lookup_col = f"{fk.referenced_table}_name"  # e.g., customer_name
-                            if lookup_col in df.columns:
-                                lookup_value = row[lookup_col]
-                                # Get previously generated ID
-                                if lookup_value in id_mappings.get(fk.referenced_table, {}):
-                                    columns.append(db_col)
-                                    values.append(str(id_mappings[fk.referenced_table][lookup_value]))
-                        else:
-                            value = row[csv_col]
-                            if pd.notna(value):
-                                columns.append(db_col)
-                                values.append(f"'{value}'" if isinstance(value, str) else str(value))
+
+                    # Add regular columns from CSV
+                    for csv_col in csv_to_db.keys():
+                        if csv_col in row.index and pd.notna(row[csv_col]):
+                            columns.append(csv_col)
+                            values.append(f"'{row[csv_col]}'" if isinstance(row[csv_col], str) else str(row[csv_col]))
+
+                    # Add foreign key references using currval
+                    for fk in table.foreign_keys:
+                        ref_table = fk.referenced_table
+                        if ref_table in sequence_names:
+                            columns.append(fk.column)
+                            values.append(f"currval('{sequence_names[ref_table]}')")
 
                     if columns and values:
-                        # Add RETURNING clause for tables that others depend on
-                        returning_clause = ""
-                        if any(fk.referenced_table == table_name for t in schema.tables for fk in t.foreign_keys):
-                            lookup_col = f"{table_name}_name"
-                            if lookup_col in df.columns:
-                                returning_clause = f" RETURNING id, {csv_to_db[lookup_col]}"
-
                         insert_sql = f"""
                         INSERT INTO {table_name} 
                         ({', '.join(columns)})
-                        VALUES ({', '.join(values)})
-                        {returning_clause};
+                        VALUES ({', '.join(values)});
                         """
-                        insert_statements.append(insert_sql.strip())
+                        statements.append(insert_sql.strip())
 
-        return insert_statements 
+        return statements 
