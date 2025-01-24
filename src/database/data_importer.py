@@ -8,25 +8,21 @@ import json
 from collections import defaultdict
 
 class DataImporter:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, executor=None):
         """Initialize the Data Importer."""
         self.client = openai.OpenAI(api_key=config.openai_api_key)
         self.templates = DataImportTemplates()
-        self.id_mappings = {}  # Store returned IDs from parent tables
-        self.fk_mappings = {}  # Store foreign key relationships
+        self.id_mappings = defaultdict(dict)  # Store returned IDs from parent tables {table: {csv_key: db_id}}
+        self.executor = executor
 
     def _build_dependency_graph(self, schema: DatabaseSchema) -> Dict[str, Set[str]]:
         """Build a graph of table dependencies based on foreign keys."""
         dependencies = defaultdict(set)
         for table in schema.tables:
-            # Make sure table is in graph even if it has no dependencies
             if table.name not in dependencies:
                 dependencies[table.name] = set()
-            # Add dependencies from foreign keys
             for fk in table.foreign_keys:
-                # Table with foreign key depends on referenced table
                 dependencies[table.name].add(fk.referenced_table)
-                # Make sure referenced table is in graph
                 if fk.referenced_table not in dependencies:
                     dependencies[fk.referenced_table] = set()
 
@@ -45,112 +41,148 @@ class DataImporter:
             if table in visited:
                 return
             temp_visited.add(table)
-            # First visit all dependencies (referenced tables)
             for dep in dependencies[table]:
                 visit(dep)
             temp_visited.remove(table)
             visited.add(table)
-            # Add table after its dependencies
             order.append(table)
 
-        # Start with tables that have foreign keys
-        tables_with_fk = [t for t, deps in dependencies.items() if deps]
-        for table in tables_with_fk:
-            if table not in visited:
-                visit(table)
-
-        # Then add any remaining tables
         for table in dependencies:
             if table not in visited:
                 visit(table)
 
-        print(f"Table insertion order: {order}")
         return order
 
-    async def generate_import_statements(self, schema: DatabaseSchema, csv_path: str) -> List[str]:
-        """Generate SQL INSERT statements to import CSV data according to schema."""
+    def _generate_composite_key(self, row: pd.Series, key_columns: List[str]) -> str:
+        """Generate a composite key from multiple columns."""
+        return "|".join(str(row[col]) for col in key_columns)
+
+    async def generate_and_execute_statements(self, schema: DatabaseSchema, csv_path: str) -> None:
+        """Generate and execute SQL INSERT statements in correct order."""
         df = pd.read_csv(csv_path)
         print(f"CSV columns: {df.columns.tolist()}")
         
-        # Process each row in the CSV
-        statements = []
-        for idx, row in df.iterrows():
-            # First insert into parent tables, then child tables
-            for table_name in self._get_insertion_order(self._build_dependency_graph(schema)):
-                table = schema.get_table(table_name)
-                if not table:
-                    continue
-
-                # Map all columns, including primary key if it exists in CSV
-                csv_to_db = {}
-                for col in table.columns:
-                    # Include primary key if it exists in CSV
-                    if col.name in df.columns:
-                        csv_to_db[col.name] = col.name
-                    # Otherwise exclude auto-generated primary keys
-                    elif not (col.is_primary and 'nextval' in str(col.default)):
-                        csv_to_db[col.name] = col.name
-
-                # Check if we have data for this table in current row
-                has_data = any(col in row.index and pd.notna(row[col]) for col in csv_to_db.keys())
-                if not has_data:
-                    continue
-
-                # Get next ID if table has a sequence AND primary key is not in CSV
-                pk_col = next((col for col in table.columns if col.is_primary), None)
-                if pk_col and pk_col.name not in df.columns and 'nextval' in str(pk_col.default):
-                    seq_name = str(pk_col.default).split("'")[1].split("'")[0]
-                    statements.append({
-                        'type': 'nextval',
-                        'row': idx,
-                        'table': table_name,
-                        'sql': f"SELECT nextval('{seq_name}');"
-                    })
-
+        insertion_order = self._get_insertion_order(self._build_dependency_graph(schema))
+        print(f"\nInsertion order: {insertion_order}")
+        
+        for table_name in insertion_order:
+            table = schema.get_table(table_name)
+            if not table:
+                continue
+                        
+            # Get all required columns for this table
+            required_columns = []
+            for col in table.columns:
+                if not col.is_primary and not col.is_nullable:
+                    required_columns.append(col.name)
+            
+            # Group rows for bulk insert
+            table_data = []
+            row_indices = []
+            
+            # Process each row
+            for idx, row in df.iterrows():
                 columns = []
                 values = []
                 
-                # Add regular columns
-                for csv_col, db_col in csv_to_db.items():
-                    if csv_col in row.index and pd.notna(row[csv_col]):
-                        columns.append(db_col)
-                        values.append(f"'{row[csv_col]}'" if isinstance(row[csv_col], str) else str(row[csv_col]))
-
-                # Add foreign key references
+                # First handle foreign keys
                 for fk in table.foreign_keys:
                     ref_table = fk.referenced_table
-                    ref_col = fk.referenced_column
-                    
-                    # Try to find the referenced value in the current row
-                    ref_value = None
-                    for csv_col in df.columns:
-                        if csv_col.lower() == ref_col.lower():
-                            ref_value = row[csv_col]
-                            break
-                    
-                    if ref_value is not None:
-                        # Use the actual value from CSV
+                    if idx in self.id_mappings[ref_table]:
+                        fk_value = self.id_mappings[ref_table][idx]
                         columns.append(fk.column)
-                        values.append(str(ref_value))
-                    else:
-                        # Use currval for auto-generated keys
-                        ref_pk_col = next(col for col in schema.get_table(ref_table).columns if col.is_primary)
-                        if 'nextval' in str(ref_pk_col.default):
-                            seq_name = str(ref_pk_col.default).split("'")[1].split("'")[0]
-                            columns.append(fk.column)
-                            values.append(f"currval('{seq_name}')")
-
+                        values.append(fk_value)
+                
+                # Then add regular columns
+                for col in table.columns:
+                    if col.name in df.columns and pd.notna(row[col.name]) and not col.is_primary:
+                        if col.name not in columns:  # Skip if already added as FK
+                            columns.append(col.name)
+                            values.append(row[col.name])
+                
+                # Verify all required columns are present
+                missing_columns = set(required_columns) - set(columns)
+                if missing_columns:
+                    continue
+                
                 if columns and values:
-                    insert_sql = f"""
-                    INSERT INTO {table_name} 
-                    ({', '.join(columns)})
-                    VALUES ({', '.join(values)});
-                    """
-                    statements.append({
-                        'type': 'insert',
-                        'row': idx,
-                        'table': table_name,
-                        'sql': insert_sql.strip()
+                    table_data.append({
+                        'columns': columns,
+                        'values': values
                     })
+                    row_indices.append(idx)
+            
+            if not table_data:
+                print(f"No valid rows for {table_name}")
+                continue
+            
+            # Generate and execute bulk insert
+            all_columns = []
+            # First add foreign key columns
+            for fk in table.foreign_keys:
+                if fk.column not in all_columns:
+                    all_columns.append(fk.column)
+            
+            # Then add other required columns
+            for col in required_columns:
+                if col not in all_columns:
+                    all_columns.append(col)
+            
+            # Finally add any remaining columns
+            for data in table_data:
+                for col in data['columns']:
+                    if col not in all_columns:
+                        all_columns.append(col)
+            
+            # Prepare values
+            value_lists = []
+            for data in table_data:
+                row_values = []
+                current_columns = data['columns']
+                current_values = data['values']
+                
+                # Create row values in the same order as all_columns
+                for col in all_columns:
+                    try:
+                        idx = current_columns.index(col)
+                        val = current_values[idx]
+                        row_values.append(f"'{val}'" if isinstance(val, str) else str(val))
+                    except ValueError:
+                        break
+                else:
+                    value_lists.append(f"({', '.join(row_values)})")
+            
+            if not value_lists:
+                continue
+            
+            # Generate and execute INSERT
+            pk_col = next((col for col in table.columns if col.is_primary), None)
+            if pk_col:
+                insert_sql = f"""
+                WITH inserted_rows AS (
+                    INSERT INTO {table_name} 
+                    ({', '.join(all_columns)})
+                    VALUES {', '.join(value_lists)}
+                    RETURNING {pk_col.name}
+                )
+                SELECT {pk_col.name} FROM inserted_rows;
+                """
+            else:
+                insert_sql = f"""
+                INSERT INTO {table_name} 
+                ({', '.join(all_columns)})
+                VALUES {', '.join(value_lists)};
+                """
+            
+            # Execute the statement and update mappings
+            result = await self.executor.execute(insert_sql, commit=True)
+            if result and pk_col:
+                returned_ids = [dict(row)[pk_col.name] for row in result]
+                self._update_id_mappings(table_name, row_indices, returned_ids)
 
-        return statements 
+    def _update_id_mappings(self, table_name: str, row_indices: List[int], returned_ids: List[Any]):
+        """Update ID mappings with returned values using row indices."""
+        
+        for idx, db_id in zip(row_indices, returned_ids):
+            self.id_mappings[table_name][idx] = db_id
+            # print(f"Mapped {table_name}[{idx}] -> {db_id}") 

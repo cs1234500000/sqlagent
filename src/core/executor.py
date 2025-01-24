@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy.sql import text
 from sqlalchemy.exc import SQLAlchemyError
 from ..database.connection import DatabaseConnection
@@ -20,19 +20,8 @@ class QueryExecutor:
         """
         self.db = DatabaseConnection(connection_string)
         
-    async def execute(self, query: str) -> List[Dict[str, Any]]:
-        """
-        Execute the SQL query and return results.
-        
-        Args:
-            query (str): SQL query to execute
-            
-        Returns:
-            List[Dict[str, Any]]: Query results
-            
-        Raises:
-            ExecutionError: If query execution fails
-        """
+    async def execute(self, query: str, commit: bool = False) -> List[Dict[str, Any]]:
+        """Execute the SQL query and return results."""
         try:
             with self.db.get_connection() as connection:
                 # Split into individual statements
@@ -48,9 +37,13 @@ class QueryExecutor:
                         connection.commit()
                         
                     elif query_type == "DML":
-                        # DML needs transaction and no results
-                        with connection.begin():
-                            connection.execute(text(stmt))
+                        # DML needs transaction
+                        result = connection.execute(text(stmt))
+                        if result.returns_rows:
+                            rows = result.mappings().all()
+                            results.extend(list(map(dict, rows)))
+                        if commit:
+                            connection.commit()
                             
                     else:  # SELECT
                         result = connection.execute(text(stmt))
@@ -58,10 +51,14 @@ class QueryExecutor:
                             rows = result.mappings().all()
                             results.extend(list(map(dict, rows)))
                 
+                # Final commit before connection closes
+                if commit:
+                    connection.commit()
+                    
                 return results
                 
         except Exception as e:
-            error_msg = f"Unexpected error during query execution: {str(e)}"
+            error_msg = f"Unexpected error during query execution: {str(e)}\n\n[SQL: {query}]"
             raise ExecutionError(error_msg)
             
     def _get_query_type(self, query: str) -> str:

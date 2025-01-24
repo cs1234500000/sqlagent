@@ -51,23 +51,13 @@ class DatabaseConnection:
         return self._engine
 
     @contextmanager
-    def get_connection(self) -> Generator:
-        """
-        Get a database connection from the pool.
-        
-        Yields:
-            Connection: Database connection
-            
-        Raises:
-            DatabaseConnectionError: If connection fails
-        """
+    def get_connection(self):
+        """Get a database connection."""
         try:
             with self.engine.connect() as connection:
                 yield connection
-        except SQLAlchemyError as e:
-            raise DatabaseConnectionError(f"Database connection error: {str(e)}")
         except Exception as e:
-            raise DatabaseConnectionError(f"Unexpected error during database connection: {str(e)}")
+            raise DatabaseConnectionError(f"Database connection error: {str(e)}")
 
     def test_connection(self) -> bool:
         """

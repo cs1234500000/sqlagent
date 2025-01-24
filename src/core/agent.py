@@ -292,22 +292,7 @@ class SQLAgent:
 
     async def import_csv_data(self, schema: DatabaseSchema, csv_path: str) -> None:
         """Import CSV data into database according to schema."""
-        importer = DataImporter(self.config)
-        statements = await importer.generate_import_statements(schema, csv_path)
-        
-        print(f"\nExecuting {len(statements)} INSERT statements...")
-        
-        # Group statements by row
-        row_statements = {}
-        for stmt in statements:
-            row = stmt['row']
-            if row not in row_statements:
-                row_statements[row] = []
-            row_statements[row].append(stmt)
-        
-        # Execute statements row by row
-        for row, stmts in sorted(row_statements.items()):
-            print(f"\nProcessing row {row}:")
-            for stmt in stmts:
-                print(f"Executing for {stmt['table']}: {stmt['sql']}")
-                await self.executor.execute(stmt['sql']) 
+        importer = DataImporter(self.config, executor=self.executor)
+                
+        # Execute import statements in correct order
+        await importer.generate_and_execute_statements(schema, csv_path)

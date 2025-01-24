@@ -12,7 +12,7 @@ async def cleanup_database(agent):
     
     # Delete rows in correct order (children first, then parents)
     cleanup_sql = """
-    TRUNCATE TABLE transactions CASCADE;
+    TRUNCATE TABLE orders CASCADE;
     TRUNCATE TABLE shipping_address CASCADE;
     TRUNCATE TABLE shipping_information CASCADE;
     TRUNCATE TABLE products CASCADE;
