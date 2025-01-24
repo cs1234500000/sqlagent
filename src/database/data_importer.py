@@ -3,7 +3,7 @@ import pandas as pd
 import openai
 from ..utils.config import Config
 from ..models.schema import DatabaseSchema
-from ..ai.templates import DataImportTemplates
+from ..prompts.templates import DataImportTemplates
 import json
 from collections import defaultdict
 
@@ -119,13 +119,26 @@ class DataImporter:
                 # Add foreign key references
                 for fk in table.foreign_keys:
                     ref_table = fk.referenced_table
-                    ref_pk_col = next(col for col in schema.get_table(ref_table).columns if col.is_primary)
+                    ref_col = fk.referenced_column
                     
-                    # Only use currval if the referenced primary key is auto-generated
-                    if 'nextval' in str(ref_pk_col.default):
-                        seq_name = str(ref_pk_col.default).split("'")[1].split("'")[0]
+                    # Try to find the referenced value in the current row
+                    ref_value = None
+                    for csv_col in df.columns:
+                        if csv_col.lower() == ref_col.lower():
+                            ref_value = row[csv_col]
+                            break
+                    
+                    if ref_value is not None:
+                        # Use the actual value from CSV
                         columns.append(fk.column)
-                        values.append(f"currval('{seq_name}')")
+                        values.append(str(ref_value))
+                    else:
+                        # Use currval for auto-generated keys
+                        ref_pk_col = next(col for col in schema.get_table(ref_table).columns if col.is_primary)
+                        if 'nextval' in str(ref_pk_col.default):
+                            seq_name = str(ref_pk_col.default).split("'")[1].split("'")[0]
+                            columns.append(fk.column)
+                            values.append(f"currval('{seq_name}')")
 
                 if columns and values:
                     insert_sql = f"""

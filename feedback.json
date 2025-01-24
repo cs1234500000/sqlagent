@@ -16,5 +16,50 @@
     "feedback_type": "success",
     "feedback_text": "Query executed successfully",
     "user_id": null
+  },
+  {
+    "timestamp": "2025-01-23T22:27:36.173333",
+    "query": "SELECT title, published_year FROM books WHERE published_year > 1930;",
+    "question": null,
+    "execution_time": 1.9050788879394531,
+    "feedback_type": "success",
+    "feedback_text": "Query executed successfully",
+    "user_id": null
+  },
+  {
+    "timestamp": "2025-01-23T22:54:35.332122",
+    "query": "SELECT p.product_name, SUM(oi.quantity * p.unit_price) AS total_sales_amount \nFROM products p \nJOIN order_items oi ON p.product_id = oi.product_id \nJOIN orders o ON oi.order_id = o.order_id \nGROUP BY p.product_name \nORDER BY total_sales_amount DESC \nLIMIT 5;",
+    "question": null,
+    "execution_time": 6.198089838027954,
+    "feedback_type": "success",
+    "feedback_text": "Query executed successfully",
+    "user_id": null
+  },
+  {
+    "timestamp": "2025-01-23T22:54:37.067069",
+    "query": "SELECT c.customer_name, AVG(o.total_amount) AS average_transaction_value  \nFROM customers c  \nJOIN orders o ON c.customer_id = o.customer_id  \nGROUP BY c.customer_name  \nORDER BY average_transaction_value DESC;",
+    "question": null,
+    "execution_time": 1.7307968139648438,
+    "feedback_type": "success",
+    "feedback_text": "Query executed successfully",
+    "user_id": null
+  },
+  {
+    "timestamp": "2025-01-23T22:54:38.801014",
+    "query": "SELECT c.customer_name, COUNT(o.order_id) AS purchase_count \nFROM customers c \nJOIN orders o ON c.customer_id = o.customer_id \nGROUP BY c.customer_id \nHAVING COUNT(o.order_id) > 3;",
+    "question": null,
+    "execution_time": 1.7297711372375488,
+    "feedback_type": "success",
+    "feedback_text": "Query executed successfully",
+    "user_id": null
+  },
+  {
+    "timestamp": "2025-01-23T22:54:41.161586",
+    "query": "SELECT date_trunc('month', o.date) AS month, SUM(o.total_amount) AS total_sales_amount \nFROM orders o \nWHERE o.date >= CURRENT_DATE - INTERVAL '1 year' \nGROUP BY month \nORDER BY month;",
+    "question": null,
+    "execution_time": 2.356221914291382,
+    "feedback_type": "success",
+    "feedback_text": "Query executed successfully",
+    "user_id": null
   }
 ]

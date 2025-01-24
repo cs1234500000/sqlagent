@@ -8,7 +8,7 @@ from ..models.schema import (
     GeneratedDatabaseSchema,
     DatabaseSchema
 )
-from ..ai.templates import SchemaPromptTemplates, SchemaFunctions
+from ..prompts.templates import SchemaPromptTemplates, SchemaFunctions
 import json
 
 class SchemaGenerator:

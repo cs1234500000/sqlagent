@@ -8,10 +8,10 @@ from ..core.validator import QueryValidator
 from ..core.executor import QueryExecutor, ExecutionError
 from ..utils.config import Config
 from pydantic import BaseModel
-from ..ai.prompt_builder import PromptBuilder
-from ..ai.context import ContextManager
-from ..ai.feedback import FeedbackCollector
-from ..ai.templates import QueryTemplates, TemplateType
+from ..prompts.prompt_builder import PromptBuilder
+from ..prompts.context import ContextManager
+from ..prompts.feedback import FeedbackCollector
+from ..prompts.templates import QueryTemplates, TemplateType
 from ..database.schema_generator import SchemaGenerator
 from ..database.data_importer import DataImporter
 
