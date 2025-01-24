@@ -72,67 +72,72 @@ class DataImporter:
         df = pd.read_csv(csv_path)
         print(f"CSV columns: {df.columns.tolist()}")
         
-        dependencies = self._build_dependency_graph(schema)
-        table_order = self._get_insertion_order(dependencies)
-        
-        # Get sequence names for each table
-        sequence_names = {}  # table -> sequence_name
-        for table in schema.tables:
-            pk_col = next((col for col in table.columns if col.is_primary), None)
-            if pk_col and 'nextval' in str(pk_col.default):
-                # Extract sequence name from: nextval('sequence_name'::regclass)
-                seq_name = str(pk_col.default).split("'")[1].split("'")[0]
-                sequence_names[table.name] = seq_name
-                print(f"Found sequence {seq_name} for table {table.name}")
-
+        # Process each row in the CSV
         statements = []
-        
-        for table_name in table_order:
-            print(f"\nProcessing table: {table_name}")
-            table = schema.get_table(table_name)
-            if not table:
-                continue
+        for idx, row in df.iterrows():
+            # First insert into parent tables, then child tables
+            for table_name in self._get_insertion_order(self._build_dependency_graph(schema)):
+                table = schema.get_table(table_name)
+                if not table:
+                    continue
 
-            # Map all non-auto-generated columns
-            csv_to_db = {}
-            for col in table.columns:
-                if not (col.is_primary and 'nextval' in str(col.default)):
-                    csv_to_db[col.name] = col.name
+                # Map all columns, including primary key if it exists in CSV
+                csv_to_db = {}
+                for col in table.columns:
+                    # Include primary key if it exists in CSV
+                    if col.name in df.columns:
+                        csv_to_db[col.name] = col.name
+                    # Otherwise exclude auto-generated primary keys
+                    elif not (col.is_primary and 'nextval' in str(col.default)):
+                        csv_to_db[col.name] = col.name
 
-            print(f"CSV to DB mapping for {table_name}: {csv_to_db}")
+                # Check if we have data for this table in current row
+                has_data = any(col in row.index and pd.notna(row[col]) for col in csv_to_db.keys())
+                if not has_data:
+                    continue
 
-            if csv_to_db:
-                # Get all required columns from CSV
-                available_cols = [col for col in csv_to_db.keys() if col in df.columns]
-                table_data = df[available_cols].drop_duplicates()
+                # Get next ID if table has a sequence AND primary key is not in CSV
+                pk_col = next((col for col in table.columns if col.is_primary), None)
+                if pk_col and pk_col.name not in df.columns and 'nextval' in str(pk_col.default):
+                    seq_name = str(pk_col.default).split("'")[1].split("'")[0]
+                    statements.append({
+                        'type': 'nextval',
+                        'row': idx,
+                        'table': table_name,
+                        'sql': f"SELECT nextval('{seq_name}');"
+                    })
+
+                columns = []
+                values = []
                 
-                for _, row in table_data.iterrows():
-                    # First get the next ID if this table has a sequence
-                    if table_name in sequence_names:
-                        statements.append(f"SELECT nextval('{sequence_names[table_name]}');")
+                # Add regular columns
+                for csv_col, db_col in csv_to_db.items():
+                    if csv_col in row.index and pd.notna(row[csv_col]):
+                        columns.append(db_col)
+                        values.append(f"'{row[csv_col]}'" if isinstance(row[csv_col], str) else str(row[csv_col]))
 
-                    columns = []
-                    values = []
+                # Add foreign key references
+                for fk in table.foreign_keys:
+                    ref_table = fk.referenced_table
+                    ref_pk_col = next(col for col in schema.get_table(ref_table).columns if col.is_primary)
+                    
+                    # Only use currval if the referenced primary key is auto-generated
+                    if 'nextval' in str(ref_pk_col.default):
+                        seq_name = str(ref_pk_col.default).split("'")[1].split("'")[0]
+                        columns.append(fk.column)
+                        values.append(f"currval('{seq_name}')")
 
-                    # Add regular columns from CSV
-                    for csv_col in csv_to_db.keys():
-                        if csv_col in row.index and pd.notna(row[csv_col]):
-                            columns.append(csv_col)
-                            values.append(f"'{row[csv_col]}'" if isinstance(row[csv_col], str) else str(row[csv_col]))
-
-                    # Add foreign key references using currval
-                    for fk in table.foreign_keys:
-                        ref_table = fk.referenced_table
-                        if ref_table in sequence_names:
-                            columns.append(fk.column)
-                            values.append(f"currval('{sequence_names[ref_table]}')")
-
-                    if columns and values:
-                        insert_sql = f"""
-                        INSERT INTO {table_name} 
-                        ({', '.join(columns)})
-                        VALUES ({', '.join(values)});
-                        """
-                        statements.append(insert_sql.strip())
+                if columns and values:
+                    insert_sql = f"""
+                    INSERT INTO {table_name} 
+                    ({', '.join(columns)})
+                    VALUES ({', '.join(values)});
+                    """
+                    statements.append({
+                        'type': 'insert',
+                        'row': idx,
+                        'table': table_name,
+                        'sql': insert_sql.strip()
+                    })
 
         return statements 

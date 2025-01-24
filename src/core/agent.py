@@ -297,6 +297,17 @@ class SQLAgent:
         
         print(f"\nExecuting {len(statements)} INSERT statements...")
         
-        # Execute statements in order
-        for sql in statements:
-            await self.executor.execute(sql) 
+        # Group statements by row
+        row_statements = {}
+        for stmt in statements:
+            row = stmt['row']
+            if row not in row_statements:
+                row_statements[row] = []
+            row_statements[row].append(stmt)
+        
+        # Execute statements row by row
+        for row, stmts in sorted(row_statements.items()):
+            print(f"\nProcessing row {row}:")
+            for stmt in stmts:
+                print(f"Executing for {stmt['table']}: {stmt['sql']}")
+                await self.executor.execute(stmt['sql']) 
