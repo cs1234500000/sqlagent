@@ -10,30 +10,32 @@ from src.utils.config import Config
 from src.models.query import QueryRequest
 
 async def setup_database(agent):
-    """Setup database with sample schema and data."""
-    # Clear existing schema
-    await agent.executor.execute("DROP TABLE IF EXISTS books CASCADE;")
-    
-    # Create table
-    create_sql = """
-    CREATE TABLE books (
-        book_id SERIAL PRIMARY KEY,
-        title VARCHAR(200) NOT NULL,
-        author VARCHAR(100) NOT NULL,
-        published_year INTEGER
-    );
-    """
-    await agent.executor.execute(create_sql)
-    
-    # Insert data
-    insert_sql = """
-    INSERT INTO books (title, author, published_year) VALUES
-    ('The Great Gatsby', 'F. Scott Fitzgerald', 1925),
-    ('1984', 'George Orwell', 1949),
-    ('Pride and Prejudice', 'Jane Austen', 1813),
-    ('To Kill a Mockingbird', 'Harper Lee', 1960);
-    """
-    await agent.executor.execute(insert_sql)
+    """Set up database with sample data."""
+    try:
+        # Create tables
+        await agent.execute_query("""
+            DROP TABLE IF EXISTS books;
+            
+            CREATE TABLE IF NOT EXISTS books (
+                book_id SERIAL PRIMARY KEY,
+                title VARCHAR NOT NULL,
+                author VARCHAR NOT NULL,
+                published_year INTEGER
+            );
+        """)
+        
+        # Insert sample data with explicit commit
+        await agent.execute_query("""
+            INSERT INTO books (title, author, published_year) VALUES
+            ('The Great Gatsby', 'F. Scott Fitzgerald', 1925),
+            ('To Kill a Mockingbird', 'Harper Lee', 1960),
+            ('1984', 'George Orwell', 1949),
+            ('Pride and Prejudice', 'Jane Austen', 1813);
+        """)
+        
+    except Exception as e:
+        print(f"Error in setup_database: {str(e)}")
+        raise
 
 async def main():
     # Initialize config

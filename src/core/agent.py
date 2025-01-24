@@ -14,6 +14,7 @@ from ..prompts.feedback import FeedbackCollector
 from ..prompts.templates import QueryTemplates, TemplateType
 from ..database.schema_generator import SchemaGenerator
 from ..database.data_importer import DataImporter
+from ..visualization.dashboard import DashboardGenerator
 
 class SQLQueryOutput(BaseModel):
     query: str
@@ -296,3 +297,19 @@ class SQLAgent:
                 
         # Execute import statements in correct order
         await importer.generate_and_execute_statements(schema, csv_path)
+
+    async def generate_dashboard(self, query_results: List[Dict[str, Any]], query: str, port: int = 8050) -> None:
+        """Generate and display an interactive dashboard from query results."""
+        dashboard = DashboardGenerator(self.config)
+        app = dashboard.create_dashboard(query_results, query)
+        
+        print(f"\nStarting dashboard server on http://127.0.0.1:{port}")
+        app.run_server(debug=True, port=port, host='0.0.0.0')  # Allow external access
+
+    async def execute_query(self, query: str) -> List[Dict[str, Any]]:
+        """Execute a SQL query directly."""
+        try:
+            return await self.executor.execute(query, commit=True)  # Make sure commit=True
+        except ExecutionError as e:
+            print(f"Error executing query: {str(e)}")
+            return []
