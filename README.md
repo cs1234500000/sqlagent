@@ -1,20 +1,28 @@
 # SQL AI Agent
 
-An intelligent agent that translates natural language to SQL queries, making database interactions more accessible and efficient.
+An intelligent multi-agent system for database operations, analytics, and visualization, powered by OpenAI GPT.
 
-## Why SQL AI Agent?
+## Key Features
 
-- Natural language to SQL conversion using OpenAI GPT
-- PostgreSQL query validation and execution
-- Schema introspection and management
-- Query timeout and error handling
-- Result formatting (table, JSON, CSV)
+### Multi-Agent Architecture
+- **Database Agent**: Schema management and evolution
+- **ETL Agent**: Data import and transformation
+- **Analytics Agent**: Business intelligence and visualization
+- **Orchestrator Agent**: Pipeline coordination
+
+### Core Capabilities
+- Natural language to SQL conversion
+- Automated schema generation and management
+- Intelligent data import with referential integrity
+- Interactive business analytics dashboards
+- Query validation and execution
 - Async support
 
 ## Prerequisites
 
 - Python 3.8+
 - PostgreSQL 12+
+- OpenAI API key
 - pip (Python package manager)
 
 ## Setup
@@ -29,16 +37,7 @@ An intelligent agent that translates natural language to SQL queries, making dat
    brew install postgresql@14
    ```
 
-2. Start PostgreSQL service:
-   ```bash
-   # Ubuntu/Debian
-   sudo service postgresql start
-
-   # macOS
-   brew services start postgresql@14
-   ```
-
-3. Create a database and user:
+2. Create a database and user:
    ```bash
    # Connect to PostgreSQL
    psql postgres
@@ -47,111 +46,121 @@ An intelligent agent that translates natural language to SQL queries, making dat
    CREATE DATABASE your_database_name;
    CREATE USER your_username WITH PASSWORD 'your_password';
    GRANT ALL PRIVILEGES ON DATABASE your_database_name TO your_username;
-   
-   # Connect to the new database
-   \c your_database_name
-   
-   # Grant schema permissions
-   GRANT ALL PRIVILEGES ON SCHEMA public TO your_username;
-   GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO your_username;
-   GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO your_username;
    ```
 
-4. Clone the repository:
+3. Clone and install:
    ```bash
-   git clone https://github.com/cs1234500000/sqlagent
+   git clone https://github.com/yourusername/sqlagent
    cd sqlagent
-   ```
-
-5. Create and activate virtual environment:
-   ```bash
    python -m venv venv
-   
-   # Windows
-   .\venv\Scripts\activate
-   
-   # Unix/macOS
-   source venv/bin/activate
-   ```
-
-6. Install the package in development mode:
-   ```bash
+   source venv/bin/activate  # or .\venv\Scripts\activate on Windows
    pip install -e .
    ```
 
-7. Create a .env file in the project root:
+4. Configure environment:
    ```bash
    # Create .env file
-   touch .env
-
-   # Add your configuration
    echo "OPENAI_API_KEY=your_openai_api_key" >> .env
    echo "DB_CONNECTION_STRING=postgresql://your_username:your_password@localhost:5432/your_database_name" >> .env
    ```
 
-## Running Examples
+## Usage Examples
 
-You can run examples from either the project root or the examples directory:
+### 1. Basic Schema and Data Import
+```python
+from src.core.agent import SQLAgent
+from src.utils.config import Config
 
-1. From project root:
-   ```bash
-   python examples/basic_usage.py
-   ```
-
-2. From examples directory:
-   ```bash
-   cd examples
-   python basic_usage.py
-   ```
-
-## Sample Database Setup
-
-Here's a simple example to create and populate a test database:
-
-```sql
--- Connect to your database first:
--- psql -U your_username -d your_database_name
-
-CREATE TABLE customers (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100),
-    email VARCHAR(100)
-);
-
-CREATE TABLE orders (
-    id SERIAL PRIMARY KEY,
-    customer_id INTEGER REFERENCES customers(id),
-    amount DECIMAL(10,2),
-    order_date TIMESTAMP
-);
-
--- Insert sample data
-INSERT INTO customers (name, email) VALUES
-('John Doe', 'john@example.com'),
-('Jane Smith', 'jane@example.com');
-
-INSERT INTO orders (customer_id, amount, order_date) VALUES
-(1, 1200.00, NOW() - INTERVAL '1 month'),
-(2, 800.00, NOW() - INTERVAL '1 month');
+async def main():
+    config = Config()
+    agent = SQLAgent(config)
+    
+    # Get schema
+    schema = await agent.get_schema()
+    
+    # Import data
+    await agent.import_csv_data(schema, "data/sales_data.csv")
 ```
 
-## Troubleshooting
+### 2. Interactive Analytics Dashboard
+```python
+# Generate sales analytics dashboard
+await agent.generate_dashboard(results, query)
+```
 
-1. If you get a "module not found" error:
-   - Make sure you've installed the package in development mode (`pip install -e .`)
-   - Check that you're running Python from the correct environment
-   - Verify the project structure matches the repository
+### 3. Natural Language Queries
+```python
+request = QueryRequest(
+    question="What are the top 5 products by total sales?",
+    include_explanation=True
+)
+result = await agent.process_request(request)
+```
 
-2. If you get environment variable errors:
-   - Make sure .env file exists in the project root
-   - Verify the environment variables are correctly set
-   - Check file permissions on .env
+## Example Dashboards
 
-3. If you get database connection errors:
-   - Verify PostgreSQL is running
-   - Check your database credentials in .env
-   - Ensure the database exists and is accessible
+The system provides several pre-built analytics views:
+1. Sales Trends Analysis
+2. Product Performance Metrics
+3. Geographic Distribution
+4. Payment and Order Status Analysis
+
+Access the interactive dashboard at `http://localhost:8050` after running the dashboard demo.
+
+## Project Structure
+
+```
+sqlagent/
+├── src/
+│   ├── agents/           # Specialized AI agents
+│   ├── core/             # Core functionality
+│   ├── database/         # Database operations
+│   ├── visualization/    # Dashboard generation
+│   └── utils/            # Utilities
+├── examples/             # Usage examples
+└── tests/               # Test suite
+```
+
+## Running Examples
+
+```bash
+# Basic usage
+python examples/basic_usage.py
+
+# Dashboard demo
+python examples/dashboard_demo.py
+
+# Complete workflow
+python examples/complete_workflow.py
+```
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## Troubleshooting
+
+### Common Issues
+
+1. Dashboard not showing:
+   - Ensure you're accessing http://localhost:8050
+   - Check if the port is available
+   - Verify data was imported successfully
+
+2. Data import errors:
+   - Verify CSV format matches schema
+   - Check database permissions
+   - Ensure referential integrity
+
+3. Environment issues:
+   - Verify .env file exists and is properly formatted
+   - Check OpenAI API key is valid
+   - Confirm database connection string is correct
+
+## License
+
+MIT License - see LICENSE file for details
